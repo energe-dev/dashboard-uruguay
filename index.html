@@ -179,33 +179,46 @@ let activeFilter = 'todos';
 let proveedores=[], bpsData=[], stock=[], servicios=[], vendedores=[], vendProductos=[];
 
 function num(s) {
-  if (!s) return 0;
+  if (s === null || s === undefined || s === '') return 0;
   s = String(s).trim().replace(/[$\s]/g, '');
-  if (/\.\d{3}/.test(s) && s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
+  if (!s) return 0;
+  if (/\d\.\d{3}/.test(s) && s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
   else if (/,\d{3}/.test(s) && !s.includes('.')) s = s.replace(/,/g,'');
   else s = s.replace(',','.');
-  return parseFloat(s.replace(/[^0-9.]/g,'')) || 0;
+  return parseFloat(s.replace(/[^0-9.\-]/g,'')) || 0;
+}
+function parseGvizDate(v) {
+  if (!v) return '';
+  var m = String(v).match(/Date\((\d+),(\d+),(\d+)\)/);
+  if (m) return String(m[3]).padStart(2,'0')+'/'+String(parseInt(m[2])+1).padStart(2,'0')+'/'+m[1];
+  return String(v);
+}
+function cellVal(cell) {
+  if (!cell || cell.v === null || cell.v === undefined) return '';
+  if (typeof cell.v === 'string' && cell.v.startsWith('Date(')) return cell.v;
+  if (typeof cell.v === 'number') return cell.f !== undefined ? String(cell.f) : String(cell.v);
+  return String(cell.v).trim();
 }
 function int(s) { return parseInt((s||'0').replace(/[^0-9]/g,'')) || 0; }
 
-function fetchGviz(gid) {
+function fetchGviz(gid, skipFirst) {
   return new Promise(function(resolve, reject) {
-    var cb = '_cb' + gid + '_' + Date.now();
+    var cb = '_cb_' + gid + '_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
     var s = document.createElement('script');
-    var t = setTimeout(function() { cleanup(); reject(new Error('Timeout ' + gid)); }, 12000);
+    var t = setTimeout(function() { cleanup(); reject(new Error('Timeout hoja ' + gid)); }, 14000);
     function cleanup() { clearTimeout(t); delete window[cb]; try { s.remove(); } catch(e) {} }
     window[cb] = function(d) {
       cleanup();
       try {
         var rows = (d.table.rows || []).map(function(row) {
-          return (row.c || []).map(function(cell) {
-            return (cell && cell.v != null) ? String(cell.v).trim() : '';
-          });
+          return (row.c || []).map(function(cell) { return cellVal(cell); });
         }).filter(function(r) { return r.some(function(v) { return v !== ''; }); });
+        // parsedNumHeaders:0 means first row is a header sent as data — skip it
+        if (skipFirst && rows.length > 0) rows = rows.slice(1);
         resolve(rows);
       } catch(e) { reject(e); }
     };
-    s.onerror = function() { cleanup(); reject(new Error('Error ' + gid)); };
+    s.onerror = function() { cleanup(); reject(new Error('Error cargando hoja ' + gid)); };
     s.src = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + gid + '&callback=' + cb;
     document.head.appendChild(s);
   });
@@ -217,22 +230,24 @@ async function syncAll() {
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
   try {
+    // proveedores & vendedores: parsedNumHeaders:1 (no skip)
+    // bps, stock, servicios, vendedoresProductos: parsedNumHeaders:0 (skip header row)
     var results = await Promise.all([
-      fetchGviz(GIDS.proveedores),
-      fetchGviz(GIDS.bps),
-      fetchGviz(GIDS.stock),
-      fetchGviz(GIDS.servicios),
-      fetchGviz(GIDS.vendedores),
-      fetchGviz(GIDS.vendedoresProductos)
+      fetchGviz(GIDS.proveedores,         false),
+      fetchGviz(GIDS.bps,                 true),
+      fetchGviz(GIDS.stock,               true),
+      fetchGviz(GIDS.servicios,           true),
+      fetchGviz(GIDS.vendedores,          false),
+      fetchGviz(GIDS.vendedoresProductos, true)
     ]);
     var pR=results[0], bR=results[1], sR=results[2], svR=results[3], vR=results[4], vpR=results[5];
 
     if(pR.length) proveedores = pR.map(function(r){return {nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''};});
-    if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};});
-    if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};});
-    if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};});
-    vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
-    vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}) : [];
+    if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};}).filter(function(b){return b.concepto;});
+    if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};}).filter(function(x){return x.item;});
+    if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};}).filter(function(x){return x.servicio;});
+    vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:parseGvizDate(r[2]),estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
+    vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}).filter(function(p){return p.vendedor;}) : [];
 
     var now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
     document.getElementById('syncStatus').innerHTML = '<span class="sync-ok">✓ Actualizado · ' + now + '</span>';
