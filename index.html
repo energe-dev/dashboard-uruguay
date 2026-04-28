@@ -205,7 +205,20 @@ const PROD_DEMO = [
   { vendedor:'Daniel', producto:'Estructura galv. S-2', cantidad:2, valor_uyu:9800, descripcion:'Sin uso' },
 ];
 
-function num(s){return parseFloat((s||'0').replace(/[^0-9.,-]/g,'').replace(',','.'))||0;}
+function num(s){
+  if(!s) return 0;
+  s = String(s).trim();
+  // Eliminar símbolos de moneda y espacios
+  s = s.replace(/[$€£€\s]/g,'');
+  // Si tiene punto como separador de miles y coma decimal: 1.000,50
+  if(/\.\d{3}/.test(s) && s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
+  // Si tiene coma como separador de miles: 1,000
+  else if(/,\d{3}/.test(s) && !s.includes('.')) s = s.replace(/,/g,'');
+  // Si tiene coma como decimal: 1,5
+  else s = s.replace(',','.');
+  s = s.replace(/[^0-9.]/g,'');
+  return parseFloat(s)||0;
+}
 function int(s){return parseInt((s||'0').replace(/[^0-9]/g,''))||0;}
 
 function csvUrl(gid) {
@@ -251,11 +264,9 @@ async function syncAll() {
     const svR=parseCSV(tSv);
     if(svR.length) servicios=svR.map(r=>({servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''}));
     const vR=parseCSV(tV);
-    if(vR.length) vendedores=vR.map(r=>({nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''}));
-    else vendedores=VENDEDORES_DEMO;
+    vendedores=vR.length ? vR.map(r=>({nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''})) : [];
     const vpR=parseCSV(tVP);
-    if(vpR.length) vendProductos=vpR.map(r=>({vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''}));
-    else vendProductos=PROD_DEMO;
+    vendProductos=vpR.length ? vpR.map(r=>({vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''})) : [];
 
     const now=new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
     document.getElementById('syncStatus').innerHTML=`<span class="sync-ok">✓ Actualizado · ${now}</span>`;
