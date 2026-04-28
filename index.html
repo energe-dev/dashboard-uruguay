@@ -123,6 +123,10 @@ tr:hover td{background:rgba(255,107,0,0.04)}
       <button class="cur-btn active" id="btnUYU" onclick="setCurrency('UYU')">UYU</button>
       <button class="cur-btn" id="btnUSD" onclick="setCurrency('USD')">USD</button>
     </div>
+    <div style="font-size:11px;color:var(--txt2);display:flex;align-items:center;gap:5px">
+      <span style="color:var(--txt3)">USD</span>
+      <span id="fxVal" style="color:var(--eg);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700">$38.5</span>
+    </div>
     <div class="header-tag" id="connTag">Cargando...</div>
   </div>
 </div>
@@ -187,7 +191,7 @@ const GIDS = {
   vendedores: 1100753393,
   vendedoresProductos: 789479455
 };
-const FX = 38.5;
+let FX = 38.5; // Se actualiza automáticamente
 let currency = 'UYU';
 let activeFilter = 'todos';
 let proveedores=[], bpsData=[], stock=[], servicios=[], vendedores=[], vendProductos=[];
@@ -249,6 +253,16 @@ async function syncAll() {
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
   try {
+    // Obtener cotización USD/UYU en tiempo real
+    try {
+      const fxRes = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      const fxData = await fxRes.json();
+      if(fxData.rates && fxData.rates.UYU) {
+        FX = fxData.rates.UYU;
+        document.getElementById('fxVal').textContent = '$ ' + FX.toFixed(1);
+      }
+    } catch(e) { console.log('FX fallback:', e); }
+
     const [pR,bR,sR,svR,vR,vpR] = await Promise.all([
       fetchGviz(GIDS.proveedores),
       fetchGviz(GIDS.bps),
