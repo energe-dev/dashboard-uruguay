@@ -189,30 +189,34 @@ function num(s) {
 }
 function int(s) { return parseInt((s||'0').replace(/[^0-9]/g,'')) || 0; }
 
-// Parse one CSV line respecting quoted fields
-function parseCSVLine(line) {
-  var result = [], cur = '', inQ = false;
-  for (var i = 0; i < line.length; i++) {
-    var c = line[i];
-    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
-    else if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
-    else { cur += c; }
-  }
-  result.push(cur.trim());
-  return result;
-}
-
-async function fetchCSV(gid) {
+// Fetch via gviz JSON endpoint (has CORS: * on all deployments, no redirect)
+async function fetchSheet(gid) {
   var url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
-            '/gviz/tq?tqx=out:csv&gid=' + gid + '&t=' + Date.now();
-  var resp = await fetch(url);
-  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' al cargar hoja ' + gid);
+            '/gviz/tq?tqx=out:json&gid=' + gid + '&t=' + Date.now();
+  var resp = await fetch(url, { credentials: 'omit' });
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' (gid=' + gid + ')');
   var text = await resp.text();
-  var lines = text.split('\n').map(function(l){ return l.replace(/\r/g,''); });
-  // First line is always header — skip it
-  return lines.slice(1)
-    .filter(function(l){ return l.trim() !== ''; })
-    .map(parseCSVLine);
+  // Strip the JS wrapper: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
+  var jsonStr = text.replace(/^[\s\S]*?setResponse\(/, '').replace(/\);?\s*$/, '');
+  var d = JSON.parse(jsonStr);
+  var tbl = d.table;
+  var hasHeader = tbl.parsedNumHeaders > 0;
+  var rows = (tbl.rows || []).map(function(row) {
+    return (row.c || []).map(function(cell) {
+      if (!cell || cell.v === null || cell.v === undefined) return '';
+      // Dates come as "Date(Y,M,D)" - convert to DD/MM/YYYY
+      if (typeof cell.v === 'string' && cell.v.startsWith('Date(')) {
+        var m = cell.v.match(/Date\((\d+),(\d+),(\d+)\)/);
+        if (m) return String(m[3]).padStart(2,'0')+'/'+String(parseInt(m[2])+1).padStart(2,'0')+'/'+m[1];
+      }
+      // Numbers: use formatted string for correct thousands/decimal separators
+      if (typeof cell.v === 'number') return cell.f !== undefined ? String(cell.f) : String(cell.v);
+      return String(cell.v).trim();
+    });
+  }).filter(function(r) { return r.some(function(v) { return v !== ''; }); });
+  // If no headers were detected, the first row IS the header - skip it
+  if (!hasHeader && rows.length > 0) rows = rows.slice(1);
+  return rows;
 }
 
 async function syncAll() {
@@ -220,32 +224,46 @@ async function syncAll() {
   btn.disabled = true;
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
-  try {
-    var results = await Promise.all([
-      fetchCSV(GIDS.proveedores),
-      fetchCSV(GIDS.bps),
-      fetchCSV(GIDS.stock),
-      fetchCSV(GIDS.servicios),
-      fetchCSV(GIDS.vendedores),
-      fetchCSV(GIDS.vendedoresProductos)
-    ]);
-    var pR=results[0], bR=results[1], sR=results[2], svR=results[3], vR=results[4], vpR=results[5];
 
-    if(pR.length) proveedores = pR.map(function(r){return {nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''};});
-    if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};}).filter(function(b){return b.concepto;});
-    if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};}).filter(function(x){return x.item;});
-    if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};}).filter(function(x){return x.servicio;});
-    vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
-    vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}).filter(function(p){return p.vendedor;}) : [];
+  // allSettled: si una hoja falla, las demás igual se cargan
+  var settled = await Promise.allSettled([
+    fetchSheet(GIDS.proveedores),
+    fetchSheet(GIDS.bps),
+    fetchSheet(GIDS.stock),
+    fetchSheet(GIDS.servicios),
+    fetchSheet(GIDS.vendedores),
+    fetchSheet(GIDS.vendedoresProductos)
+  ]);
 
-    var now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
+  var keys = ['proveedores','bps','stock','servicios','vendedores','vendedoresProductos'];
+  var errors = [];
+  settled.forEach(function(r, i) {
+    if (r.status === 'rejected') { console.warn('Hoja '+keys[i]+' falló:', r.reason); errors.push(keys[i]); }
+  });
+
+  function ok(i) { return settled[i].status === 'fulfilled' ? settled[i].value : []; }
+  var pR=ok(0), bR=ok(1), sR=ok(2), svR=ok(3), vR=ok(4), vpR=ok(5);
+
+  if(pR.length) proveedores = pR.map(function(r){return {nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''};});
+  if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};}).filter(function(b){return b.concepto;});
+  if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};}).filter(function(x){return x.item;});
+  if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};}).filter(function(x){return x.servicio;});
+  vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
+  vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}).filter(function(p){return p.vendedor;}) : [];
+
+  var now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
+  if (errors.length === keys.length) {
+    // Todas fallaron
+    document.getElementById('syncStatus').innerHTML = '<span class="sync-err">✕ No se pudo conectar al sheet. ¿Es público?</span>';
+    document.getElementById('connTag').textContent = 'Error';
+  } else if (errors.length) {
+    document.getElementById('syncStatus').innerHTML = '<span class="sync-ok">✓ Actualizado · ' + now + '</span> <span class="sync-err" style="font-size:10px">(' + errors.join(', ') + ' sin datos)</span>';
+    document.getElementById('connTag').textContent = 'Conectado';
+    render();
+  } else {
     document.getElementById('syncStatus').innerHTML = '<span class="sync-ok">✓ Actualizado · ' + now + '</span>';
     document.getElementById('connTag').textContent = 'Conectado';
     render();
-  } catch(e) {
-    document.getElementById('syncStatus').innerHTML = '<span class="sync-err">✕ ' + e.message + '</span>';
-    document.getElementById('connTag').textContent = 'Error';
-    console.error(e);
   }
   btn.disabled = false;
 }
