@@ -195,27 +195,28 @@ function num(s) {
 }
 function int(s) { return parseInt((s||'0').replace(/[^0-9]/g,'')) || 0; }
 
-function fetchGviz(gid) {
-  return new Promise((resolve, reject) => {
-    const cb = '_cb' + gid + '_' + Date.now();
-    const s = document.createElement('script');
-    const t = setTimeout(() => { cleanup(); reject(new Error('Timeout ' + gid)); }, 12000);
-    function cleanup() { clearTimeout(t); delete window[cb]; try { s.remove(); } catch(e) {} }
-    window[cb] = function(d) {
-      cleanup();
-      try {
-        const rows = (d.table.rows || []).map(function(row) {
-          return (row.c || []).map(function(cell) {
-            return (cell && cell.v != null) ? String(cell.v).trim() : '';
-          });
-        }).filter(function(r) { return r.some(function(v) { return v !== ''; }); });
-        resolve(rows);
-      } catch(e) { reject(e); }
-    };
-    s.onerror = function() { cleanup(); reject(new Error('Error ' + gid)); };
-    s.src = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + gid + '&callback=' + cb;
-    document.head.appendChild(s);
-  });
+const PUB_ID = '2PACX-1vRBE0hTUEFevPgiqDU53qLU0urpo3oX_um_w1WmtRsC7Js4euRymtljsKk0ebXSd3hbUWqn-4882NDC';
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').slice(1);
+  return lines.map(function(line) {
+    const cols = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === '"') { inQ = !inQ; }
+      else if (line[i] === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else cur += line[i];
+    }
+    cols.push(cur.trim());
+    return cols.map(function(c) { return c.replace(/^"|"$/g, '').trim(); });
+  }).filter(function(r) { return r[0] && r[0] !== ''; });
+}
+
+function fetchSheet(gid) {
+  const url = 'https://docs.google.com/spreadsheets/d/e/' + PUB_ID + '/pub?output=csv&gid=' + gid;
+  return fetch(url).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' gid=' + gid);
+    return r.text();
+  }).then(function(t) { return parseCSV(t); });
 }
 
 async function syncAll() {
@@ -236,12 +237,12 @@ async function syncAll() {
 
   try {
     const [pR,bR,sR,svR,vR,vpR] = await Promise.all([
-      fetchGviz(GIDS.proveedores),
-      fetchGviz(GIDS.bps),
-      fetchGviz(GIDS.stock),
-      fetchGviz(GIDS.servicios),
-      fetchGviz(GIDS.vendedores),
-      fetchGviz(GIDS.vendedoresProductos)
+      fetchSheet(GIDS.proveedores),
+      fetchSheet(GIDS.bps),
+      fetchSheet(GIDS.stock),
+      fetchSheet(GIDS.servicios),
+      fetchSheet(GIDS.vendedores),
+      fetchSheet(GIDS.vendedoresProductos)
     ]);
 
     if(pR.length) proveedores = pR.map(r => ({nombre:r[0], monto_uyu:num(r[1]), estado:r[2]||'Abierto', comentario:r[3]||''}));
