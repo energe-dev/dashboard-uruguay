@@ -178,7 +178,7 @@ tr:hover td{background:rgba(255,107,0,0.04)}
 </div>
 
 <script>
-const SHEET_ID = '1i6fRsib-w-1co4BAyFnNUkXWkI6X6-Kak6XyEqFJ1vI';
+const SHEET_ID = '2PACX-1vRBE0hTUEFevPgiqDU53qLU0urpo3oX_um_w1WmtRsC7Js4euRymtljsKk0ebXSd3hbUWqn-4882NDC';
 const GIDS = {
   proveedores: 0,
   bps: 100045881,
@@ -209,7 +209,7 @@ function num(s){return parseFloat((s||'0').replace(/[^0-9.,-]/g,'').replace(',',
 function int(s){return parseInt((s||'0').replace(/[^0-9]/g,''))||0;}
 
 function csvUrl(gid) {
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/pub?output=csv&gid=${gid}`;
+  return `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?output=csv&gid=${gid}`;
 }
 function parseCSV(text) {
   const lines = text.trim().split('\n').slice(1);
