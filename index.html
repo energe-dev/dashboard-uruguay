@@ -20,11 +20,8 @@ body{background:var(--bg0);font-family:'Barlow',sans-serif;color:var(--txt1);min
 .logo-sep{width:1px;height:32px;background:var(--eg-border)}
 .logo-sub{font-size:10px;color:var(--eg);letter-spacing:3px;text-transform:uppercase;font-weight:600}
 .logo-name{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--txt1);letter-spacing:1px}
-.header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.header-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .header-tag{background:var(--eg-dim);border:1px solid var(--eg-border);color:var(--eg);font-size:10px;font-weight:600;padding:4px 12px;border-radius:20px;letter-spacing:2px;text-transform:uppercase}
-.fx-badge{display:flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);padding:4px 10px;border-radius:20px}
-.fx-label{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px}
-.fx-val{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:700;color:var(--eg)}
 .currency-toggle{display:flex;gap:3px;background:var(--bg3);border-radius:20px;padding:3px}
 .cur-btn{font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px;cursor:pointer;color:var(--txt3);border:none;background:transparent;transition:all 0.15s;font-family:'Barlow',sans-serif}
 .cur-btn.active{background:var(--eg);color:#fff}
@@ -119,10 +116,6 @@ tr:hover td{background:rgba(255,107,0,0.04)}
     </div>
   </div>
   <div class="header-right">
-    <div class="fx-badge">
-      <span class="fx-label">USD =</span>
-      <span class="fx-val" id="fxVal">$ 38.5</span>
-    </div>
     <div class="currency-toggle">
       <button class="cur-btn active" id="btnUYU" onclick="setCurrency('UYU')">UYU</button>
       <button class="cur-btn" id="btnUSD" onclick="setCurrency('USD')">USD</button>
@@ -180,14 +173,14 @@ const GIDS = {
   vendedores: 1100753393,
   vendedoresProductos: 789479455
 };
-let FX = 38.5;
+const FX = 38.5;
 let currency = 'UYU';
 let activeFilter = 'todos';
 let proveedores=[], bpsData=[], stock=[], servicios=[], vendedores=[], vendProductos=[];
 
 function num(s) {
   if (!s) return 0;
-  s = String(s).trim().replace(/[$€£\s]/g, '');
+  s = String(s).trim().replace(/[$\s]/g, '');
   if (/\.\d{3}/.test(s) && s.includes(',')) s = s.replace(/\./g,'').replace(',','.');
   else if (/,\d{3}/.test(s) && !s.includes('.')) s = s.replace(/,/g,'');
   else s = s.replace(',','.');
@@ -195,64 +188,53 @@ function num(s) {
 }
 function int(s) { return parseInt((s||'0').replace(/[^0-9]/g,'')) || 0; }
 
-const PUB_ID = '2PACX-1vRBE0hTUEFevPgiqDU53qLU0urpo3oX_um_w1WmtRsC7Js4euRymtljsKk0ebXSd3hbUWqn-4882NDC';
-
-function parseCSV(text) {
-  const lines = text.trim().split('\n').slice(1);
-  return lines.map(function(line) {
-    const cols = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      if (line[i] === '"') { inQ = !inQ; }
-      else if (line[i] === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else cur += line[i];
-    }
-    cols.push(cur.trim());
-    return cols.map(function(c) { return c.replace(/^"|"$/g, '').trim(); });
-  }).filter(function(r) { return r[0] && r[0] !== ''; });
-}
-
-function fetchSheet(gid) {
-  const url = 'https://docs.google.com/spreadsheets/d/e/' + PUB_ID + '/pub?output=csv&gid=' + gid;
-  return fetch(url).then(function(r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status + ' gid=' + gid);
-    return r.text();
-  }).then(function(t) { return parseCSV(t); });
+function fetchGviz(gid) {
+  return new Promise(function(resolve, reject) {
+    var cb = '_cb' + gid + '_' + Date.now();
+    var s = document.createElement('script');
+    var t = setTimeout(function() { cleanup(); reject(new Error('Timeout ' + gid)); }, 12000);
+    function cleanup() { clearTimeout(t); delete window[cb]; try { s.remove(); } catch(e) {} }
+    window[cb] = function(d) {
+      cleanup();
+      try {
+        var rows = (d.table.rows || []).map(function(row) {
+          return (row.c || []).map(function(cell) {
+            return (cell && cell.v != null) ? String(cell.v).trim() : '';
+          });
+        }).filter(function(r) { return r.some(function(v) { return v !== ''; }); });
+        resolve(rows);
+      } catch(e) { reject(e); }
+    };
+    s.onerror = function() { cleanup(); reject(new Error('Error ' + gid)); };
+    s.src = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + gid + '&callback=' + cb;
+    document.head.appendChild(s);
+  });
 }
 
 async function syncAll() {
-  const btn = document.getElementById('syncBtn');
+  var btn = document.getElementById('syncBtn');
   btn.disabled = true;
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
-
-  // Cotización USD/UYU en tiempo real
   try {
-    const fxRes = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-    const fxData = await fxRes.json();
-    if (fxData.rates && fxData.rates.UYU) {
-      FX = fxData.rates.UYU;
-      document.getElementById('fxVal').textContent = '$ ' + FX.toFixed(1);
-    }
-  } catch(e) {}
-
-  try {
-    const [pR,bR,sR,svR,vR,vpR] = await Promise.all([
-      fetchSheet(GIDS.proveedores),
-      fetchSheet(GIDS.bps),
-      fetchSheet(GIDS.stock),
-      fetchSheet(GIDS.servicios),
-      fetchSheet(GIDS.vendedores),
-      fetchSheet(GIDS.vendedoresProductos)
+    var results = await Promise.all([
+      fetchGviz(GIDS.proveedores),
+      fetchGviz(GIDS.bps),
+      fetchGviz(GIDS.stock),
+      fetchGviz(GIDS.servicios),
+      fetchGviz(GIDS.vendedores),
+      fetchGviz(GIDS.vendedoresProductos)
     ]);
+    var pR=results[0], bR=results[1], sR=results[2], svR=results[3], vR=results[4], vpR=results[5];
 
-    if(pR.length) proveedores = pR.map(r => ({nombre:r[0], monto_uyu:num(r[1]), estado:r[2]||'Abierto', comentario:r[3]||''}));
-    if(bR.length) bpsData = bR.map(r => ({concepto:r[0], monto_uyu:num(r[1])}));
-    if(sR.length) stock = sR.map(r => ({item:r[0], cant:int(r[1]), valor_uyu:num(r[2]), ubicacion:r[3]||''}));
-    if(svR.length) servicios = svR.map(r => ({servicio:r[0], estado:r[1]||'Activo', deuda_uyu:num(r[2]), comentario:r[3]||''}));
-    vendedores = vR.length ? vR.map(r => ({nombre:r[0], liquidacion_uyu:num(r[1]), fecha:r[2]||'', estado:r[3]||'Liquidado', comentario:r[4]||''})) : [];
-    vendProductos = vpR.length ? vpR.map(r => ({vendedor:r[0], producto:r[1], cantidad:int(r[2]), valor_uyu:num(r[3]), descripcion:r[4]||''})) : [];
+    if(pR.length) proveedores = pR.map(function(r){return {nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''};});
+    if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};});
+    if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};});
+    if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};});
+    vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
+    vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}) : [];
 
-    const now = new Date().toLocaleString('es-UY', {hour:'2-digit', minute:'2-digit', day:'2-digit', month:'2-digit'});
+    var now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
     document.getElementById('syncStatus').innerHTML = '<span class="sync-ok">✓ Actualizado · ' + now + '</span>';
     document.getElementById('connTag').textContent = 'Conectado';
     render();
@@ -264,117 +246,115 @@ async function syncAll() {
 }
 
 function fmt(uyu) {
-  if (currency === 'UYU') return '$ ' + Math.round(uyu).toLocaleString('es-UY');
-  return 'U$S ' + Math.round(uyu / FX).toLocaleString('es-UY');
+  if (currency==='UYU') return '$ ' + Math.round(uyu).toLocaleString('es-UY');
+  return 'U$S ' + Math.round(uyu/FX).toLocaleString('es-UY');
 }
 function badgeProv(e) {
-  const m = {'Abierto':'badge-open','Pagado':'badge-paid','Esperando respuesta':'badge-wait','Pendiente de pago':'badge-pend'};
-  return '<span class="badge ' + (m[e]||'badge-open') + '">' + e + '</span>';
+  var m={'Abierto':'badge-open','Pagado':'badge-paid','Esperando respuesta':'badge-wait','Pendiente de pago':'badge-pend'};
+  return '<span class="badge '+(m[e]||'badge-open')+'">'+e+'</span>';
 }
 function badgeServ(e) {
-  if (e==='Activo') return '<span class="badge badge-ok">Activo</span>';
-  if (e==='Suspendido') return '<span class="badge badge-issue">Suspendido</span>';
-  return '<span class="badge badge-warning">' + e + '</span>';
+  if(e==='Activo') return '<span class="badge badge-ok">Activo</span>';
+  if(e==='Suspendido') return '<span class="badge badge-issue">Suspendido</span>';
+  return '<span class="badge badge-warning">'+e+'</span>';
 }
 function badgeVend(e) {
-  if (e==='Liquidado') return '<span class="badge badge-paid">Liquidado</span>';
-  if (e==='Pendiente') return '<span class="badge badge-pend">Pendiente</span>';
-  return '<span class="badge badge-warning">' + e + '</span>';
+  if(e==='Liquidado') return '<span class="badge badge-paid">Liquidado</span>';
+  if(e==='Pendiente') return '<span class="badge badge-pend">Pendiente</span>';
+  return '<span class="badge badge-warning">'+e+'</span>';
 }
 function setCurrency(c) {
-  currency = c;
-  document.getElementById('btnUYU').classList.toggle('active', c==='UYU');
-  document.getElementById('btnUSD').classList.toggle('active', c==='USD');
+  currency=c;
+  document.getElementById('btnUYU').classList.toggle('active',c==='UYU');
+  document.getElementById('btnUSD').classList.toggle('active',c==='USD');
   render();
 }
 function setFilter(f) {
-  activeFilter = f;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  activeFilter=f;
+  document.querySelectorAll('.filter-btn').forEach(function(b){b.classList.toggle('active',b.dataset.f===f);});
   renderProv();
 }
 function renderKpis() {
-  const arr = proveedores.filter(p => p.estado==='Pagado').reduce((s,p) => s+p.monto_uyu, 0);
-  const pen = proveedores.filter(p => p.estado!=='Pagado').reduce((s,p) => s+p.monto_uyu, 0);
-  const bps = bpsData.reduce((s,b) => s+b.monto_uyu, 0);
-  const stk = stock.reduce((s,i) => s+i.cant*i.valor_uyu, 0);
-  const cur = currency==='UYU' ? 'pesos uruguayos' : 'dólares';
-  document.getElementById('kpis').innerHTML =
-    '<div class="kpi orange"><div class="kpi-label">Dinero arreglado</div><div class="kpi-val">' + fmt(arr) + '</div><div class="kpi-cur">' + cur + '</div></div>' +
-    '<div class="kpi red"><div class="kpi-label">Dinero pendiente</div><div class="kpi-val">' + fmt(pen) + '</div><div class="kpi-cur">' + cur + '</div></div>' +
-    '<div class="kpi amber"><div class="kpi-label">Deuda BPS</div><div class="kpi-val">' + fmt(bps) + '</div><div class="kpi-cur">' + cur + '</div></div>' +
-    '<div class="kpi blue"><div class="kpi-label">Valor stock</div><div class="kpi-val">' + fmt(stk) + '</div><div class="kpi-cur">' + cur + '</div></div>';
+  var arr=proveedores.filter(function(p){return p.estado==='Pagado';}).reduce(function(s,p){return s+p.monto_uyu;},0);
+  var pen=proveedores.filter(function(p){return p.estado!=='Pagado';}).reduce(function(s,p){return s+p.monto_uyu;},0);
+  var bps=bpsData.reduce(function(s,b){return s+b.monto_uyu;},0);
+  var stk=stock.reduce(function(s,i){return s+i.cant*i.valor_uyu;},0);
+  var cur=currency==='UYU'?'pesos uruguayos':'dólares';
+  document.getElementById('kpis').innerHTML=
+    '<div class="kpi orange"><div class="kpi-label">Dinero arreglado</div><div class="kpi-val">'+fmt(arr)+'</div><div class="kpi-cur">'+cur+'</div></div>'+
+    '<div class="kpi red"><div class="kpi-label">Dinero pendiente</div><div class="kpi-val">'+fmt(pen)+'</div><div class="kpi-cur">'+cur+'</div></div>'+
+    '<div class="kpi amber"><div class="kpi-label">Deuda BPS</div><div class="kpi-val">'+fmt(bps)+'</div><div class="kpi-cur">'+cur+'</div></div>'+
+    '<div class="kpi blue"><div class="kpi-label">Valor stock</div><div class="kpi-val">'+fmt(stk)+'</div><div class="kpi-cur">'+cur+'</div></div>';
 }
 function renderFilters() {
-  const estados = ['todos','Abierto','Pagado','Esperando respuesta','Pendiente de pago'];
-  document.getElementById('filterBtns').innerHTML = estados.map(e =>
-    '<button class="filter-btn' + (activeFilter===e?' active':'') + '" data-f="' + e + '" onclick="setFilter(\'' + e + '\')">' + (e==='todos'?'Todos':e) + '</button>'
-  ).join('');
+  var estados=['todos','Abierto','Pagado','Esperando respuesta','Pendiente de pago'];
+  document.getElementById('filterBtns').innerHTML=estados.map(function(e){
+    return '<button class="filter-btn'+(activeFilter===e?' active':'')+'" data-f="'+e+'" onclick="setFilter(\''+e+'\')">'+( e==='todos'?'Todos':e)+'</button>';
+  }).join('');
 }
 function renderProv() {
-  const f = activeFilter==='todos' ? proveedores : proveedores.filter(p => p.estado===activeFilter);
-  if (!f.length) { document.getElementById('provTbody').innerHTML = '<tr><td colspan="4"><div class="no-rows">Sin registros</div></td></tr>'; return; }
-  document.getElementById('provTbody').innerHTML = f.map(p =>
-    '<tr><td style="font-weight:500">' + p.nombre + '</td>' +
-    '<td style="font-family:\'Barlow Condensed\',sans-serif;font-size:15px;font-weight:600">' + fmt(p.monto_uyu) + '</td>' +
-    '<td>' + badgeProv(p.estado) + '</td>' +
-    '<td style="font-size:12px;color:var(--txt2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + p.comentario + '">' + p.comentario + '</td></tr>'
-  ).join('');
+  var f=activeFilter==='todos'?proveedores:proveedores.filter(function(p){return p.estado===activeFilter;});
+  if(!f.length){document.getElementById('provTbody').innerHTML='<tr><td colspan="4"><div class="no-rows">Sin registros</div></td></tr>';return;}
+  document.getElementById('provTbody').innerHTML=f.map(function(p){
+    return '<tr><td style="font-weight:500">'+p.nombre+'</td>'+
+    '<td style="font-family:\'Barlow Condensed\',sans-serif;font-size:15px;font-weight:600">'+fmt(p.monto_uyu)+'</td>'+
+    '<td>'+badgeProv(p.estado)+'</td>'+
+    '<td style="font-size:12px;color:var(--txt2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+p.comentario+'">'+p.comentario+'</td></tr>';
+  }).join('');
 }
 function renderBPS() {
-  const total = bpsData.reduce((s,b) => s+b.monto_uyu, 0);
-  document.getElementById('bpsWrap').innerHTML =
-    '<div class="bps-card"><div style="font-size:10px;color:var(--eg);letter-spacing:2px;text-transform:uppercase;font-weight:600;margin-bottom:12px">Desglose</div>' +
-    bpsData.map(b => '<div class="bps-item"><span class="bps-label">' + b.concepto + '</span><span class="bps-amount">' + fmt(b.monto_uyu) + '</span></div>').join('') + '</div>' +
-    '<div class="bps-card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;text-align:center">' +
-    '<div style="font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:2px">Total adeudado BPS</div>' +
-    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:40px;font-weight:700;color:var(--red);line-height:1">' + fmt(total) + '</div>' +
-    '<div style="font-size:10px;color:var(--txt3)">' + (currency==='UYU'?'pesos uruguayos':'dólares') + '</div></div>';
+  var total=bpsData.reduce(function(s,b){return s+b.monto_uyu;},0);
+  document.getElementById('bpsWrap').innerHTML=
+    '<div class="bps-card"><div style="font-size:10px;color:var(--eg);letter-spacing:2px;text-transform:uppercase;font-weight:600;margin-bottom:12px">Desglose</div>'+
+    bpsData.map(function(b){return '<div class="bps-item"><span class="bps-label">'+b.concepto+'</span><span class="bps-amount">'+fmt(b.monto_uyu)+'</span></div>';}).join('')+'</div>'+
+    '<div class="bps-card" style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:8px;text-align:center">'+
+    '<div style="font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:2px">Total adeudado BPS</div>'+
+    '<div style="font-family:\'Barlow Condensed\',sans-serif;font-size:40px;font-weight:700;color:var(--red);line-height:1">'+fmt(total)+'</div>'+
+    '<div style="font-size:10px;color:var(--txt3)">'+(currency==='UYU'?'pesos uruguayos':'dólares')+'</div></div>';
 }
 function renderStock() {
-  document.getElementById('stockTbody').innerHTML = stock.map(s =>
-    '<tr><td style="font-weight:500">' + s.item + '</td>' +
-    '<td style="text-align:center"><span class="stock-num">' + s.cant + '</span></td>' +
-    '<td>' + fmt(s.valor_uyu) + '</td>' +
-    '<td style="font-family:\'Barlow Condensed\',sans-serif;font-size:14px;font-weight:600;color:var(--eg)">' + fmt(s.cant*s.valor_uyu) + '</td>' +
-    '<td style="font-size:11px;color:var(--txt3)">' + s.ubicacion + '</td></tr>'
-  ).join('');
+  document.getElementById('stockTbody').innerHTML=stock.map(function(s){
+    return '<tr><td style="font-weight:500">'+s.item+'</td>'+
+    '<td style="text-align:center"><span class="stock-num">'+s.cant+'</span></td>'+
+    '<td>'+fmt(s.valor_uyu)+'</td>'+
+    '<td style="font-family:\'Barlow Condensed\',sans-serif;font-size:14px;font-weight:600;color:var(--eg)">'+fmt(s.cant*s.valor_uyu)+'</td>'+
+    '<td style="font-size:11px;color:var(--txt3)">'+s.ubicacion+'</td></tr>';
+  }).join('');
 }
 function renderServ() {
-  document.getElementById('servTbody').innerHTML = servicios.map((s,i) =>
-    '<tr><td style="font-weight:500">' + s.servicio + '</td>' +
-    '<td>' + badgeServ(s.estado) + '</td>' +
-    '<td style="font-family:\'Barlow Condensed\',sans-serif;font-size:14px;color:' + (s.deuda_uyu>0?'var(--red)':'var(--txt3)') + '">' + (s.deuda_uyu>0?fmt(s.deuda_uyu):'—') + '</td>' +
-    '<td><input class="editable" data-i="' + i + '" value="' + s.comentario + '" onchange="servicios[this.dataset.i].comentario=this.value"/></td></tr>'
-  ).join('');
+  document.getElementById('servTbody').innerHTML=servicios.map(function(s,i){
+    return '<tr><td style="font-weight:500">'+s.servicio+'</td>'+
+    '<td>'+badgeServ(s.estado)+'</td>'+
+    '<td style="font-family:\'Barlow Condensed\',sans-serif;font-size:14px;color:'+(s.deuda_uyu>0?'var(--red)':'var(--txt3)')+'">'+( s.deuda_uyu>0?fmt(s.deuda_uyu):'—')+'</td>'+
+    '<td><input class="editable" data-i="'+i+'" value="'+s.comentario+'" onchange="servicios[this.dataset.i].comentario=this.value"/></td></tr>';
+  }).join('');
 }
 function renderVendedores() {
-  const grid = document.getElementById('vendedoresGrid');
-  if (!vendedores.length) { grid.innerHTML = '<div class="no-rows">Sin datos de vendedores</div>'; return; }
-  grid.innerHTML = vendedores.map(function(v) {
-    const prods = vendProductos.filter(p => p.vendedor === v.nombre);
-    const totalProds = prods.reduce((s,p) => s + (p.cantidad * p.valor_uyu), 0);
-    return '<div class="vend-card">' +
-      '<div class="vend-header">' +
-      '<div class="vend-avatar">' + v.nombre.charAt(0).toUpperCase() + '</div>' +
-      '<div class="vend-info"><div class="vend-name">' + v.nombre + '</div><div class="vend-fecha">' + (v.fecha ? 'Liquidado: '+v.fecha : 'Sin fecha') + '</div></div>' +
-      '<div class="vend-liq"><div class="vend-liq-label">Liquidación</div><div class="vend-liq-val">' + fmt(v.liquidacion_uyu) + '</div></div>' +
-      '</div>' +
-      '<div class="vend-body">' +
-      '<div class="vend-estado"><span style="font-size:11px;color:var(--txt3)">Estado:</span>' + badgeVend(v.estado) + '</div>' +
-      (v.comentario ? '<div class="vend-comentario">' + v.comentario + '</div>' : '') +
-      '<div class="vend-section-label">Productos retirados</div>' +
-      (prods.length ? prods.map(p =>
-        '<div class="vend-prod-row"><div><div class="vend-prod-name">' + p.producto + '</div>' +
-        (p.descripcion ? '<div class="vend-prod-desc">' + p.descripcion + '</div>' : '') + '</div>' +
-        '<span class="vend-prod-qty">x' + p.cantidad + '</span>' +
-        '<span class="vend-prod-val">' + fmt(p.cantidad * p.valor_uyu) + '</span></div>'
-      ).join('') : '<div style="font-size:12px;color:var(--txt3);padding:8px 0">Sin productos registrados</div>') +
-      (prods.length ? '<div class="vend-total-row"><span class="vend-total-label">Total productos</span><span class="vend-total-val">' + fmt(totalProds) + '</span></div>' : '') +
+  var grid=document.getElementById('vendedoresGrid');
+  if(!vendedores.length){grid.innerHTML='<div class="no-rows">Sin datos de vendedores</div>';return;}
+  grid.innerHTML=vendedores.map(function(v){
+    var prods=vendProductos.filter(function(p){return p.vendedor===v.nombre;});
+    var totalProds=prods.reduce(function(s,p){return s+(p.cantidad*p.valor_uyu);},0);
+    return '<div class="vend-card">'+
+      '<div class="vend-header">'+
+      '<div class="vend-avatar">'+v.nombre.charAt(0).toUpperCase()+'</div>'+
+      '<div class="vend-info"><div class="vend-name">'+v.nombre+'</div><div class="vend-fecha">'+(v.fecha?'Liquidado: '+v.fecha:'Sin fecha')+'</div></div>'+
+      '<div class="vend-liq"><div class="vend-liq-label">Liquidación</div><div class="vend-liq-val">'+fmt(v.liquidacion_uyu)+'</div></div>'+
+      '</div><div class="vend-body">'+
+      '<div class="vend-estado"><span style="font-size:11px;color:var(--txt3)">Estado:</span>'+badgeVend(v.estado)+'</div>'+
+      (v.comentario?'<div class="vend-comentario">'+v.comentario+'</div>':'')+
+      '<div class="vend-section-label">Productos retirados</div>'+
+      (prods.length?prods.map(function(p){
+        return '<div class="vend-prod-row"><div><div class="vend-prod-name">'+p.producto+'</div>'+
+        (p.descripcion?'<div class="vend-prod-desc">'+p.descripcion+'</div>':'')+
+        '</div><span class="vend-prod-qty">x'+p.cantidad+'</span>'+
+        '<span class="vend-prod-val">'+fmt(p.cantidad*p.valor_uyu)+'</span></div>';
+      }).join(''):'<div style="font-size:12px;color:var(--txt3);padding:8px 0">Sin productos</div>')+
+      (prods.length?'<div class="vend-total-row"><span class="vend-total-label">Total productos</span><span class="vend-total-val">'+fmt(totalProds)+'</span></div>':'')+
       '</div></div>';
   }).join('');
 }
-function render() { renderKpis(); renderFilters(); renderProv(); renderBPS(); renderStock(); renderServ(); renderVendedores(); }
-
+function render(){renderKpis();renderFilters();renderProv();renderBPS();renderStock();renderServ();renderVendedores();}
 syncAll();
 </script>
 </body>
