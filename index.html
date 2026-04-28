@@ -75,7 +75,34 @@ tr:hover td{background:rgba(255,107,0,0.04)}
 .no-rows{padding:2rem;text-align:center;color:var(--txt3);font-size:13px}
 .spinner{display:inline-block;width:12px;height:12px;border:2px solid var(--eg-border);border-top-color:var(--eg);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
-@media(max-width:600px){.bps-wrap{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.header{padding:.75rem 1rem}.sections{padding:1rem}}
+
+/* VENDEDORES */
+.vendedores-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.2rem}
+.vend-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.vend-header{background:var(--bg3);padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)}
+.vend-avatar{width:38px;height:38px;border-radius:50%;background:var(--eg-dim);border:2px solid var(--eg-border);display:flex;align-items:center;justify-content:center;font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:700;color:var(--eg)}
+.vend-info{flex:1;margin-left:12px}
+.vend-name{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;color:var(--txt1)}
+.vend-fecha{font-size:11px;color:var(--txt3);margin-top:2px}
+.vend-liq{text-align:right}
+.vend-liq-label{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:1px}
+.vend-liq-val{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--amber);line-height:1.1}
+.vend-body{padding:14px 16px}
+.vend-section-label{font-size:10px;color:var(--eg);text-transform:uppercase;letter-spacing:2px;font-weight:600;margin-bottom:8px;margin-top:12px}
+.vend-section-label:first-child{margin-top:0}
+.vend-prod-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+.vend-prod-row:last-child{border-bottom:none}
+.vend-prod-name{font-size:12px;color:var(--txt1);flex:1}
+.vend-prod-qty{font-size:11px;color:var(--txt3);margin:0 12px;white-space:nowrap}
+.vend-prod-val{font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:var(--eg);white-space:nowrap}
+.vend-prod-desc{font-size:11px;color:var(--txt3);margin-top:2px}
+.vend-total-row{display:flex;justify-content:space-between;align-items:center;padding-top:10px;margin-top:4px;border-top:1px solid var(--eg-border)}
+.vend-total-label{font-size:11px;color:var(--txt2);font-weight:600;text-transform:uppercase;letter-spacing:1px}
+.vend-total-val{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:700;color:var(--amber)}
+.vend-comentario{font-size:12px;color:var(--txt2);padding:8px 0;line-height:1.6}
+.vend-estado{display:flex;align-items:center;gap:8px;padding:8px 0}
+
+@media(max-width:600px){.bps-wrap{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr}.header{padding:.75rem 1rem}.sections{padding:1rem}.vendedores-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -106,6 +133,8 @@ tr:hover td{background:rgba(255,107,0,0.04)}
 </div>
 
 <div class="sections">
+
+  <!-- PROVEEDORES -->
   <div class="sec">
     <div class="sec-title">Proveedores</div>
     <div class="kpis" id="kpis"></div>
@@ -115,10 +144,14 @@ tr:hover td{background:rgba(255,107,0,0.04)}
       <tbody id="provTbody"></tbody></table>
     </div>
   </div>
+
+  <!-- BPS -->
   <div class="sec">
     <div class="sec-title">Deuda BPS</div>
     <div class="bps-wrap" id="bpsWrap"></div>
   </div>
+
+  <!-- STOCK -->
   <div class="sec">
     <div class="sec-title">Stock Energe</div>
     <div class="table-wrap">
@@ -126,6 +159,8 @@ tr:hover td{background:rgba(255,107,0,0.04)}
       <tbody id="stockTbody"></tbody></table>
     </div>
   </div>
+
+  <!-- SERVICIOS -->
   <div class="sec">
     <div class="sec-title">Estado de servicios</div>
     <div class="table-wrap">
@@ -133,36 +168,70 @@ tr:hover td{background:rgba(255,107,0,0.04)}
       <tbody id="servTbody"></tbody></table>
     </div>
   </div>
+
+  <!-- VENDEDORES -->
+  <div class="sec">
+    <div class="sec-title">Liquidaciones ex vendedores</div>
+    <div class="vendedores-grid" id="vendedoresGrid"></div>
+  </div>
+
 </div>
 
 <script>
 const SHEET_ID = '1i6fRsib-w-1co4BAyFnNUkXWkI6X6-Kak6XyEqFJ1vI';
-const GIDS = { proveedores: 0, bps: 100045881, stock: 21464391, servicios: 1609268816 };
+const GIDS = {
+  proveedores: 0,
+  bps: 100045881,
+  stock: 21464391,
+  servicios: 1609268816,
+  vendedores: 1100753393,
+  vendedoresProductos: 789479455
+};
 const FX = 38.5;
 let currency = 'UYU';
 let activeFilter = 'todos';
-let proveedores = [], bpsData = [], stock = [], servicios = [];
+let proveedores=[], bpsData=[], stock=[], servicios=[], vendedores=[], vendProductos=[];
+
+// Datos de ejemplo para vendedores hasta conectar la Sheet
+const VENDEDORES_DEMO = [
+  { nombre:'Luis', liquidacion_uyu:85000, fecha:'15/03/2025', estado:'Liquidado', comentario:'Liquidación acordada con productos a valor de mercado.' },
+  { nombre:'Daniel', liquidacion_uyu:62000, fecha:'20/03/2025', estado:'Liquidado', comentario:'Liquidación final cerrada. Productos retirados del depósito.' }
+];
+const PROD_DEMO = [
+  { vendedor:'Luis', producto:'Panel solar 400W', cantidad:2, valor_uyu:28000, descripcion:'Retirados del depósito Mvd.' },
+  { vendedor:'Luis', producto:'Inversor 5kW', cantidad:1, valor_uyu:52000, descripcion:'Usado, con garantía' },
+  { vendedor:'Luis', producto:'Cable 10mm² x 50m', cantidad:1, valor_uyu:3600, descripcion:'Rollo nuevo' },
+  { vendedor:'Daniel', producto:'Panel solar 400W', cantidad:3, valor_uyu:28000, descripcion:'Retirados del depósito Mvd.' },
+  { vendedor:'Daniel', producto:'Estructura galv. S-2', cantidad:2, valor_uyu:9800, descripcion:'Sin uso' },
+];
 
 function csvUrl(gid) {
   return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/pub?output=csv&gid=${gid}`;
 }
-
 function parseCSV(text) {
   const lines = text.trim().split('\n').slice(1);
   return lines.map(line => {
-    const cols = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      if (line[i] === '"') { inQ = !inQ; }
-      else if (line[i] === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else cur += line[i];
+    const cols=[]; let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+      if(line[i]==='"'){inQ=!inQ;}
+      else if(line[i]===','&&!inQ){cols.push(cur.trim());cur='';}
+      else cur+=line[i];
     }
     cols.push(cur.trim());
-    return cols.map(c => c.replace(/^"|"$/g, '').trim());
-  }).filter(r => r[0] && r[0] !== '');
+    return cols.map(c=>c.replace(/^"|"$/g,'').trim());
+  }).filter(r=>r[0]&&r[0]!=='');
 }
+function num(s){return parseFloat((s||'0').replace(/[^0-9.,-]/g,'').replace(',','.'))||0;}
+function int(s){return parseInt((s||'0').replace(/[^0-9]/g,''))||0;}
 
-function num(s) { return parseFloat((s||'0').replace(/[^0-9.,-]/g,'').replace(',','.')) || 0; }
-function int(s) { return parseInt((s||'0').replace(/[^0-9]/g,'')) || 0; }
+async function fetchSheet(gid) {
+  if (!gid || String(gid).startsWith('PENDIENTE')) return null;
+  try {
+    const r = await fetch(csvUrl(gid));
+    if (!r.ok) return null;
+    return await r.text();
+  } catch { return null; }
+}
 
 async function syncAll() {
   const btn = document.getElementById('syncBtn');
@@ -170,81 +239,105 @@ async function syncAll() {
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
   try {
-    const [rP, rB, rS, rSv] = await Promise.all([
+    const [rP,rB,rS,rSv,rV,rVP] = await Promise.all([
       fetch(csvUrl(GIDS.proveedores)),
       fetch(csvUrl(GIDS.bps)),
       fetch(csvUrl(GIDS.stock)),
-      fetch(csvUrl(GIDS.servicios))
+      fetch(csvUrl(GIDS.servicios)),
+      fetchSheet(GIDS.vendedores),
+      fetchSheet(GIDS.vendedoresProductos)
     ]);
-    if (!rP.ok) throw new Error(`Error HTTP ${rP.status}. Verificá que la hoja esté publicada en la web.`);
-    const [tP, tB, tS, tSv] = await Promise.all([rP.text(), rB.text(), rS.text(), rSv.text()]);
+    if (!rP.ok) throw new Error(`Error HTTP ${rP.status}. Verificá que la hoja esté publicada.`);
+    const [tP,tB,tS,tSv] = await Promise.all([rP.text(),rB.text(),rS.text(),rSv.text()]);
 
-    const pR = parseCSV(tP);
-    if (pR.length) proveedores = pR.map(r => ({ nombre:r[0], monto_uyu:num(r[1]), estado:r[2]||'Abierto', comentario:r[3]||'' }));
+    const pR=parseCSV(tP);
+    if(pR.length) proveedores=pR.map(r=>({nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''}));
 
-    const bR = parseCSV(tB);
-    if (bR.length) bpsData = bR.map(r => ({ concepto:r[0], monto_uyu:num(r[1]) }));
+    const bR=parseCSV(tB);
+    if(bR.length) bpsData=bR.map(r=>({concepto:r[0],monto_uyu:num(r[1])}));
 
-    const sR = parseCSV(tS);
-    if (sR.length) stock = sR.map(r => ({ item:r[0], cant:int(r[1]), valor_uyu:num(r[2]), ubicacion:r[3]||'' }));
+    const sR=parseCSV(tS);
+    if(sR.length) stock=sR.map(r=>({item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''}));
 
-    const svR = parseCSV(tSv);
-    if (svR.length) servicios = svR.map(r => ({ servicio:r[0], estado:r[1]||'Activo', deuda_uyu:num(r[2]), comentario:r[3]||'' }));
+    const svR=parseCSV(tSv);
+    if(svR.length) servicios=svR.map(r=>({servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''}));
 
-    const now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
-    document.getElementById('syncStatus').innerHTML = `<span class="sync-ok">✓ Actualizado · ${now}</span>`;
-    document.getElementById('connTag').textContent = 'Conectado';
+    // Vendedores: usar sheet si existe, si no usar demo
+    if (rV) {
+      const vR=parseCSV(rV);
+      if(vR.length) vendedores=vR.map(r=>({nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''}));
+      else vendedores=VENDEDORES_DEMO;
+    } else { vendedores=VENDEDORES_DEMO; }
+
+    if (rVP) {
+      const vpR=parseCSV(rVP);
+      if(vpR.length) vendProductos=vpR.map(r=>({vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''}));
+      else vendProductos=PROD_DEMO;
+    } else { vendProductos=PROD_DEMO; }
+
+    const now=new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
+    document.getElementById('syncStatus').innerHTML=`<span class="sync-ok">✓ Actualizado · ${now}</span>`;
+    document.getElementById('connTag').textContent='Conectado';
     render();
   } catch(e) {
-    document.getElementById('syncStatus').innerHTML = `<span class="sync-err">✕ ${e.message}</span>`;
-    document.getElementById('connTag').textContent = 'Error';
+    document.getElementById('syncStatus').innerHTML=`<span class="sync-err">✕ ${e.message}</span>`;
+    document.getElementById('connTag').textContent='Error';
+    // Igual mostramos vendedores demo
+    vendedores=VENDEDORES_DEMO; vendProductos=PROD_DEMO;
+    renderVendedores();
   }
-  btn.disabled = false;
+  btn.disabled=false;
 }
 
-function fmt(uyu) {
-  if (currency==='UYU') return '$ ' + Math.round(uyu).toLocaleString('es-UY');
-  return 'U$S ' + Math.round(uyu/FX).toLocaleString('es-UY');
+function fmt(uyu){
+  if(currency==='UYU') return '$ '+Math.round(uyu).toLocaleString('es-UY');
+  return 'U$S '+Math.round(uyu/FX).toLocaleString('es-UY');
 }
-function badgeProv(e) {
-  const m = {'Abierto':'badge-open','Pagado':'badge-paid','Esperando respuesta':'badge-wait','Pendiente de pago':'badge-pend'};
+function badgeProv(e){
+  const m={'Abierto':'badge-open','Pagado':'badge-paid','Esperando respuesta':'badge-wait','Pendiente de pago':'badge-pend'};
   return `<span class="badge ${m[e]||'badge-open'}">${e}</span>`;
 }
-function badgeServ(e) {
+function badgeServ(e){
   if(e==='Activo') return `<span class="badge badge-ok">Activo</span>`;
   if(e==='Suspendido') return `<span class="badge badge-issue">Suspendido</span>`;
   return `<span class="badge badge-warning">${e}</span>`;
 }
-function setCurrency(c) {
+function badgeVend(e){
+  if(e==='Liquidado') return `<span class="badge badge-paid">Liquidado</span>`;
+  if(e==='Pendiente') return `<span class="badge badge-pend">Pendiente</span>`;
+  return `<span class="badge badge-warning">${e}</span>`;
+}
+function setCurrency(c){
   currency=c;
   document.getElementById('btnUYU').classList.toggle('active',c==='UYU');
   document.getElementById('btnUSD').classList.toggle('active',c==='USD');
   render();
 }
-function setFilter(f) {
+function setFilter(f){
   activeFilter=f;
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.toggle('active',b.dataset.f===f));
   renderProv();
 }
-function renderKpis() {
-  const arr = proveedores.filter(p=>p.estado==='Pagado').reduce((s,p)=>s+p.monto_uyu,0);
-  const pen = proveedores.filter(p=>p.estado!=='Pagado').reduce((s,p)=>s+p.monto_uyu,0);
-  const bps = bpsData.reduce((s,b)=>s+b.monto_uyu,0);
-  const stk = stock.reduce((s,i)=>s+i.cant*i.valor_uyu,0);
-  const cur = currency==='UYU'?'pesos uruguayos':'dólares';
+
+function renderKpis(){
+  const arr=proveedores.filter(p=>p.estado==='Pagado').reduce((s,p)=>s+p.monto_uyu,0);
+  const pen=proveedores.filter(p=>p.estado!=='Pagado').reduce((s,p)=>s+p.monto_uyu,0);
+  const bps=bpsData.reduce((s,b)=>s+b.monto_uyu,0);
+  const stk=stock.reduce((s,i)=>s+i.cant*i.valor_uyu,0);
+  const cur=currency==='UYU'?'pesos uruguayos':'dólares';
   document.getElementById('kpis').innerHTML=`
     <div class="kpi orange"><div class="kpi-label">Dinero arreglado</div><div class="kpi-val">${fmt(arr)}</div><div class="kpi-cur">${cur}</div></div>
     <div class="kpi red"><div class="kpi-label">Dinero pendiente</div><div class="kpi-val">${fmt(pen)}</div><div class="kpi-cur">${cur}</div></div>
     <div class="kpi amber"><div class="kpi-label">Deuda BPS</div><div class="kpi-val">${fmt(bps)}</div><div class="kpi-cur">${cur}</div></div>
     <div class="kpi blue"><div class="kpi-label">Valor stock</div><div class="kpi-val">${fmt(stk)}</div><div class="kpi-cur">${cur}</div></div>`;
 }
-function renderFilters() {
+function renderFilters(){
   const estados=['todos','Abierto','Pagado','Esperando respuesta','Pendiente de pago'];
   document.getElementById('filterBtns').innerHTML=estados.map(e=>
     `<button class="filter-btn${activeFilter===e?' active':''}" data-f="${e}" onclick="setFilter('${e}')">${e==='todos'?'Todos':e}</button>`
   ).join('');
 }
-function renderProv() {
+function renderProv(){
   const f=activeFilter==='todos'?proveedores:proveedores.filter(p=>p.estado===activeFilter);
   if(!f.length){document.getElementById('provTbody').innerHTML=`<tr><td colspan="4"><div class="no-rows">Sin registros</div></td></tr>`;return;}
   document.getElementById('provTbody').innerHTML=f.map(p=>`
@@ -253,7 +346,7 @@ function renderProv() {
     <td>${badgeProv(p.estado)}</td>
     <td style="font-size:12px;color:var(--txt2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.comentario}">${p.comentario}</td></tr>`).join('');
 }
-function renderBPS() {
+function renderBPS(){
   const total=bpsData.reduce((s,b)=>s+b.monto_uyu,0);
   document.getElementById('bpsWrap').innerHTML=`
     <div class="bps-card">
@@ -266,7 +359,7 @@ function renderBPS() {
       <div style="font-size:10px;color:var(--txt3)">${currency==='UYU'?'pesos uruguayos':'dólares'}</div>
     </div>`;
 }
-function renderStock() {
+function renderStock(){
   document.getElementById('stockTbody').innerHTML=stock.map(s=>`
     <tr><td style="font-weight:500">${s.item}</td>
     <td style="text-align:center"><span class="stock-num">${s.cant}</span></td>
@@ -274,16 +367,65 @@ function renderStock() {
     <td style="font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:600;color:var(--eg)">${fmt(s.cant*s.valor_uyu)}</td>
     <td style="font-size:11px;color:var(--txt3)">${s.ubicacion}</td></tr>`).join('');
 }
-function renderServ() {
+function renderServ(){
   document.getElementById('servTbody').innerHTML=servicios.map((s,i)=>`
     <tr><td style="font-weight:500">${s.servicio}</td>
     <td>${badgeServ(s.estado)}</td>
     <td style="font-family:'Barlow Condensed',sans-serif;font-size:14px;color:${s.deuda_uyu>0?'var(--red)':'var(--txt3)'}">${s.deuda_uyu>0?fmt(s.deuda_uyu):'—'}</td>
     <td><input class="editable" data-i="${i}" value="${s.comentario}" onchange="servicios[this.dataset.i].comentario=this.value"/></td></tr>`).join('');
 }
-function render(){renderKpis();renderFilters();renderProv();renderBPS();renderStock();renderServ();}
 
-// Cargar automáticamente al abrir
+function renderVendedores(){
+  const grid = document.getElementById('vendedoresGrid');
+  if(!vendedores.length){grid.innerHTML=`<div class="no-rows">Sin datos de vendedores</div>`;return;}
+  grid.innerHTML = vendedores.map(v => {
+    const prods = vendProductos.filter(p => p.vendedor === v.nombre);
+    const totalProds = prods.reduce((s,p)=>s+(p.cantidad*p.valor_uyu),0);
+    const inicial = v.nombre.charAt(0).toUpperCase();
+    return `
+    <div class="vend-card">
+      <div class="vend-header">
+        <div class="vend-avatar">${inicial}</div>
+        <div class="vend-info">
+          <div class="vend-name">${v.nombre}</div>
+          <div class="vend-fecha">${v.fecha ? 'Liquidado: '+v.fecha : 'Fecha no registrada'}</div>
+        </div>
+        <div class="vend-liq">
+          <div class="vend-liq-label">Liquidación</div>
+          <div class="vend-liq-val">${fmt(v.liquidacion_uyu)}</div>
+        </div>
+      </div>
+      <div class="vend-body">
+        <div class="vend-estado">
+          <span style="font-size:11px;color:var(--txt3)">Estado:</span>
+          ${badgeVend(v.estado)}
+        </div>
+        ${v.comentario?`<div class="vend-comentario">${v.comentario}</div>`:''}
+
+        <div class="vend-section-label">Productos retirados</div>
+        ${prods.length ? prods.map(p=>`
+          <div class="vend-prod-row">
+            <div>
+              <div class="vend-prod-name">${p.producto}</div>
+              ${p.descripcion?`<div class="vend-prod-desc">${p.descripcion}</div>`:''}
+            </div>
+            <span class="vend-prod-qty">x${p.cantidad}</span>
+            <span class="vend-prod-val">${fmt(p.cantidad*p.valor_uyu)}</span>
+          </div>`).join('')
+          : `<div style="font-size:12px;color:var(--txt3);padding:8px 0">Sin productos registrados</div>`}
+
+        ${prods.length ? `
+        <div class="vend-total-row">
+          <span class="vend-total-label">Total productos</span>
+          <span class="vend-total-val">${fmt(totalProds)}</span>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function render(){renderKpis();renderFilters();renderProv();renderBPS();renderStock();renderServ();renderVendedores();}
+
 syncAll();
 </script>
 </body>
