@@ -205,32 +205,26 @@ const PROD_DEMO = [
   { vendedor:'Daniel', producto:'Estructura galv. S-2', cantidad:2, valor_uyu:9800, descripcion:'Sin uso' },
 ];
 
-function csvUrl(gid) {
-  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/pub?output=csv&gid=${gid}`;
-}
-function parseCSV(text) {
-  const lines = text.trim().split('\n').slice(1);
-  return lines.map(line => {
-    const cols=[]; let cur='', inQ=false;
-    for(let i=0;i<line.length;i++){
-      if(line[i]==='"'){inQ=!inQ;}
-      else if(line[i]===','&&!inQ){cols.push(cur.trim());cur='';}
-      else cur+=line[i];
-    }
-    cols.push(cur.trim());
-    return cols.map(c=>c.replace(/^"|"$/g,'').trim());
-  }).filter(r=>r[0]&&r[0]!=='');
-}
 function num(s){return parseFloat((s||'0').replace(/[^0-9.,-]/g,'').replace(',','.'))||0;}
 function int(s){return parseInt((s||'0').replace(/[^0-9]/g,''))||0;}
 
-async function fetchSheet(gid) {
-  if (!gid || String(gid).startsWith('PENDIENTE')) return null;
-  try {
-    const r = await fetch(csvUrl(gid));
-    if (!r.ok) return null;
-    return await r.text();
-  } catch { return null; }
+// JSONP: único método que supera el CORS de Google Sheets en GitHub Pages
+function fetchGviz(gid) {
+  return new Promise((resolve, reject) => {
+    const cbName = '_gviz_' + gid + '_' + Date.now();
+    const script = document.createElement('script');
+    const timer = setTimeout(() => { delete window[cbName]; script.remove(); reject(new Error('Timeout gid='+gid)); }, 10000);
+    window[cbName] = (data) => {
+      clearTimeout(timer); delete window[cbName]; script.remove();
+      try {
+        const rows = data.table.rows || [];
+        resolve(rows.map(row=>(row.c||[]).map(cell=>(cell&&cell.v!==null&&cell.v!==undefined)?String(cell.v):'')).filter(r=>r.some(v=>v!=='')));
+      } catch(e){ reject(e); }
+    };
+    script.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq=select+*&gid=${gid}&callback=${cbName}`;
+    script.onerror = ()=>{ clearTimeout(timer); delete window[cbName]; script.remove(); reject(new Error('Error cargando gid='+gid)); };
+    document.head.appendChild(script);
+  });
 }
 
 async function syncAll() {
@@ -239,41 +233,23 @@ async function syncAll() {
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
   try {
-    const [rP,rB,rS,rSv,rV,rVP] = await Promise.all([
-      fetch(csvUrl(GIDS.proveedores)),
-      fetch(csvUrl(GIDS.bps)),
-      fetch(csvUrl(GIDS.stock)),
-      fetch(csvUrl(GIDS.servicios)),
-      fetchSheet(GIDS.vendedores),
-      fetchSheet(GIDS.vendedoresProductos)
+    const [pR,bR,sR,svR,vR,vpR] = await Promise.all([
+      fetchGviz(GIDS.proveedores),
+      fetchGviz(GIDS.bps),
+      fetchGviz(GIDS.stock),
+      fetchGviz(GIDS.servicios),
+      fetchGviz(GIDS.vendedores),
+      fetchGviz(GIDS.vendedoresProductos)
     ]);
-    if (!rP.ok) throw new Error(`Error HTTP ${rP.status}. Verificá que la hoja esté publicada.`);
-    const [tP,tB,tS,tSv] = await Promise.all([rP.text(),rB.text(),rS.text(),rSv.text()]);
 
-    const pR=parseCSV(tP);
     if(pR.length) proveedores=pR.map(r=>({nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''}));
-
-    const bR=parseCSV(tB);
     if(bR.length) bpsData=bR.map(r=>({concepto:r[0],monto_uyu:num(r[1])}));
-
-    const sR=parseCSV(tS);
     if(sR.length) stock=sR.map(r=>({item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''}));
-
-    const svR=parseCSV(tSv);
     if(svR.length) servicios=svR.map(r=>({servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''}));
-
-    // Vendedores: usar sheet si existe, si no usar demo
-    if (rV) {
-      const vR=parseCSV(rV);
-      if(vR.length) vendedores=vR.map(r=>({nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''}));
-      else vendedores=VENDEDORES_DEMO;
-    } else { vendedores=VENDEDORES_DEMO; }
-
-    if (rVP) {
-      const vpR=parseCSV(rVP);
-      if(vpR.length) vendProductos=vpR.map(r=>({vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''}));
-      else vendProductos=PROD_DEMO;
-    } else { vendProductos=PROD_DEMO; }
+    if(vR.length) vendedores=vR.map(r=>({nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''}));
+    else vendedores=VENDEDORES_DEMO;
+    if(vpR.length) vendProductos=vpR.map(r=>({vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''}));
+    else vendProductos=PROD_DEMO;
 
     const now=new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
     document.getElementById('syncStatus').innerHTML=`<span class="sync-ok">✓ Actualizado · ${now}</span>`;
