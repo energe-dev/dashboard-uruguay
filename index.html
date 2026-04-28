@@ -187,41 +187,32 @@ function num(s) {
   else s = s.replace(',','.');
   return parseFloat(s.replace(/[^0-9.\-]/g,'')) || 0;
 }
-function parseGvizDate(v) {
-  if (!v) return '';
-  var m = String(v).match(/Date\((\d+),(\d+),(\d+)\)/);
-  if (m) return String(m[3]).padStart(2,'0')+'/'+String(parseInt(m[2])+1).padStart(2,'0')+'/'+m[1];
-  return String(v);
-}
-function cellVal(cell) {
-  if (!cell || cell.v === null || cell.v === undefined) return '';
-  if (typeof cell.v === 'string' && cell.v.startsWith('Date(')) return cell.v;
-  if (typeof cell.v === 'number') return cell.f !== undefined ? String(cell.f) : String(cell.v);
-  return String(cell.v).trim();
-}
 function int(s) { return parseInt((s||'0').replace(/[^0-9]/g,'')) || 0; }
 
-function fetchGviz(gid, skipFirst) {
-  return new Promise(function(resolve, reject) {
-    var cb = '_cb_' + gid + '_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-    var s = document.createElement('script');
-    var t = setTimeout(function() { cleanup(); reject(new Error('Timeout hoja ' + gid)); }, 14000);
-    function cleanup() { clearTimeout(t); delete window[cb]; try { s.remove(); } catch(e) {} }
-    window[cb] = function(d) {
-      cleanup();
-      try {
-        var rows = (d.table.rows || []).map(function(row) {
-          return (row.c || []).map(function(cell) { return cellVal(cell); });
-        }).filter(function(r) { return r.some(function(v) { return v !== ''; }); });
-        // parsedNumHeaders:0 means first row is a header sent as data — skip it
-        if (skipFirst && rows.length > 0) rows = rows.slice(1);
-        resolve(rows);
-      } catch(e) { reject(e); }
-    };
-    s.onerror = function() { cleanup(); reject(new Error('Error cargando hoja ' + gid)); };
-    s.src = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + gid + '&callback=' + cb;
-    document.head.appendChild(s);
-  });
+// Parse one CSV line respecting quoted fields
+function parseCSVLine(line) {
+  var result = [], cur = '', inQ = false;
+  for (var i = 0; i < line.length; i++) {
+    var c = line[i];
+    if (c === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
+    else if (c === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
+async function fetchCSV(gid) {
+  var url = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID +
+            '/gviz/tq?tqx=out:csv&gid=' + gid + '&t=' + Date.now();
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' al cargar hoja ' + gid);
+  var text = await resp.text();
+  var lines = text.split('\n').map(function(l){ return l.replace(/\r/g,''); });
+  // First line is always header — skip it
+  return lines.slice(1)
+    .filter(function(l){ return l.trim() !== ''; })
+    .map(parseCSVLine);
 }
 
 async function syncAll() {
@@ -230,15 +221,13 @@ async function syncAll() {
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
   try {
-    // proveedores & vendedores: parsedNumHeaders:1 (no skip)
-    // bps, stock, servicios, vendedoresProductos: parsedNumHeaders:0 (skip header row)
     var results = await Promise.all([
-      fetchGviz(GIDS.proveedores,         false),
-      fetchGviz(GIDS.bps,                 true),
-      fetchGviz(GIDS.stock,               true),
-      fetchGviz(GIDS.servicios,           true),
-      fetchGviz(GIDS.vendedores,          false),
-      fetchGviz(GIDS.vendedoresProductos, true)
+      fetchCSV(GIDS.proveedores),
+      fetchCSV(GIDS.bps),
+      fetchCSV(GIDS.stock),
+      fetchCSV(GIDS.servicios),
+      fetchCSV(GIDS.vendedores),
+      fetchCSV(GIDS.vendedoresProductos)
     ]);
     var pR=results[0], bR=results[1], sR=results[2], svR=results[3], vR=results[4], vpR=results[5];
 
@@ -246,7 +235,7 @@ async function syncAll() {
     if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};}).filter(function(b){return b.concepto;});
     if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};}).filter(function(x){return x.item;});
     if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};}).filter(function(x){return x.servicio;});
-    vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:parseGvizDate(r[2]),estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
+    vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
     vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}).filter(function(p){return p.vendedor;}) : [];
 
     var now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
@@ -256,6 +245,7 @@ async function syncAll() {
   } catch(e) {
     document.getElementById('syncStatus').innerHTML = '<span class="sync-err">✕ ' + e.message + '</span>';
     document.getElementById('connTag').textContent = 'Error';
+    console.error(e);
   }
   btn.disabled = false;
 }
