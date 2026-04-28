@@ -178,7 +178,7 @@ tr:hover td{background:rgba(255,107,0,0.04)}
 </div>
 
 <script>
-const SHEET_ID = '2PACX-1vRBE0hTUEFevPgiqDU53qLU0urpo3oX_um_w1WmtRsC7Js4euRymtljsKk0ebXSd3hbUWqn-4882NDC';
+const SHEET_ID = '1i6fRsib-w-1co4BAyFnNUkXWkI6X6-Kak6XyEqFJ1vI';
 const GIDS = {
   proveedores: 0,
   bps: 100045881,
@@ -221,21 +221,26 @@ function num(s){
 }
 function int(s){return parseInt((s||'0').replace(/[^0-9]/g,''))||0;}
 
-function csvUrl(gid) {
-  return `https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?output=csv&gid=${gid}`;
-}
-function parseCSV(text) {
-  const lines = text.trim().split('\n').slice(1);
-  return lines.map(line => {
-    const cols=[]; let cur='', inQ=false;
-    for(let i=0;i<line.length;i++){
-      if(line[i]==='"'){inQ=!inQ;}
-      else if(line[i]===','&&!inQ){cols.push(cur.trim());cur='';}
-      else cur+=line[i];
-    }
-    cols.push(cur.trim());
-    return cols.map(c=>c.replace(/^"|"$/g,'').trim());
-  }).filter(r=>r[0]&&r[0]!=='');
+// JSONP via gviz — funciona con ID de edición si la hoja es pública
+function fetchGviz(gid) {
+  return new Promise((resolve, reject) => {
+    const cb = '_cb' + gid + '_' + Date.now();
+    const s = document.createElement('script');
+    const t = setTimeout(()=>{ cleanup(); reject(new Error('Timeout '+gid)); }, 12000);
+    function cleanup(){ clearTimeout(t); delete window[cb]; try{s.remove();}catch(e){} }
+    window[cb] = (d) => {
+      cleanup();
+      try {
+        const rows = (d.table.rows||[]).map(row=>
+          (row.c||[]).map(cell=> cell&&cell.v!=null ? String(cell.v).trim() : '')
+        ).filter(r=>r.some(v=>v!==''));
+        resolve(rows);
+      } catch(e){ reject(e); }
+    };
+    s.onerror = ()=>{ cleanup(); reject(new Error('Error '+gid)); };
+    s.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&gid=${gid}&callback=${cb}`;
+    document.head.appendChild(s);
+  });
 }
 
 async function syncAll() {
@@ -244,30 +249,20 @@ async function syncAll() {
   document.getElementById('syncStatus').innerHTML = '<span class="spinner"></span>Sincronizando...';
   document.getElementById('connTag').textContent = 'Cargando...';
   try {
-    const [rP,rB,rS,rSv,rV,rVP] = await Promise.all([
-      fetch(csvUrl(GIDS.proveedores)),
-      fetch(csvUrl(GIDS.bps)),
-      fetch(csvUrl(GIDS.stock)),
-      fetch(csvUrl(GIDS.servicios)),
-      fetch(csvUrl(GIDS.vendedores)),
-      fetch(csvUrl(GIDS.vendedoresProductos))
+    const [pR,bR,sR,svR,vR,vpR] = await Promise.all([
+      fetchGviz(GIDS.proveedores),
+      fetchGviz(GIDS.bps),
+      fetchGviz(GIDS.stock),
+      fetchGviz(GIDS.servicios),
+      fetchGviz(GIDS.vendedores),
+      fetchGviz(GIDS.vendedoresProductos)
     ]);
-    if (!rP.ok) throw new Error(`Error HTTP ${rP.status}`);
-    const [tP,tB,tS,tSv,tV,tVP] = await Promise.all([rP.text(),rB.text(),rS.text(),rSv.text(),rV.text(),rVP.text()]);
-
-    const pR=parseCSV(tP);
     if(pR.length) proveedores=pR.map(r=>({nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''}));
-    const bR=parseCSV(tB);
     if(bR.length) bpsData=bR.map(r=>({concepto:r[0],monto_uyu:num(r[1])}));
-    const sR=parseCSV(tS);
     if(sR.length) stock=sR.map(r=>({item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''}));
-    const svR=parseCSV(tSv);
     if(svR.length) servicios=svR.map(r=>({servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''}));
-    const vR=parseCSV(tV);
     vendedores=vR.length ? vR.map(r=>({nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''})) : [];
-    const vpR=parseCSV(tVP);
     vendProductos=vpR.length ? vpR.map(r=>({vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''})) : [];
-
     const now=new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
     document.getElementById('syncStatus').innerHTML=`<span class="sync-ok">✓ Actualizado · ${now}</span>`;
     document.getElementById('connTag').textContent='Conectado';
