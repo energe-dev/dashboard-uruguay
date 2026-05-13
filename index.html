@@ -173,7 +173,7 @@ const GIDS = {
   vendedores: 1100753393,
   vendedoresProductos: 789479455
 };
-const FX = 38.5;
+const FX = 38.5; // Tipo de cambio USD → UYU
 let currency = 'UYU';
 let activeFilter = 'todos';
 let proveedores=[], bpsData=[], stock=[], servicios=[], vendedores=[], vendProductos=[];
@@ -244,12 +244,36 @@ async function syncAll() {
   function ok(i) { return settled[i].status === 'fulfilled' ? settled[i].value : []; }
   var pR=ok(0), bR=ok(1), sR=ok(2), svR=ok(3), vR=ok(4), vpR=ok(5);
 
-  if(pR.length) proveedores = pR.map(function(r){return {nombre:r[0],monto_uyu:num(r[1]),estado:r[2]||'Abierto',comentario:r[3]||''};});
-  if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:num(r[1])};}).filter(function(b){return b.concepto;});
-  if(sR.length) stock = sR.map(function(r){return {item:r[0],cant:int(r[1]),valor_uyu:num(r[2]),ubicacion:r[3]||''};}).filter(function(x){return x.item;});
-  if(svR.length) servicios = svR.map(function(r){return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:num(r[2]),comentario:r[3]||''};}).filter(function(x){return x.servicio;});
-  vendedores = vR.length ? vR.map(function(r){return {nombre:r[0],liquidacion_uyu:num(r[1]),fecha:r[2]||'',estado:r[3]||'Liquidado',comentario:r[4]||''};}) : [];
-  vendProductos = vpR.length ? vpR.map(function(r){return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:num(r[3]),descripcion:r[4]||''};}).filter(function(p){return p.vendedor;}) : [];
+  // toUYU: si la moneda es USD, multiplica por FX; si no, lo toma como UYU
+  function toUYU(v, moneda) { return (moneda||'').toUpperCase()==='USD' ? v*FX : v; }
+
+  // Proveedores: A=nombre, B=monto, C=moneda(UYU/USD/vacío), D=estado, E=comentario
+  if(pR.length) proveedores = pR.map(function(r){
+    return {nombre:r[0],monto_uyu:toUYU(num(r[1]),r[2]),estado:r[3]||'Abierto',comentario:r[4]||''};
+  });
+
+  // BPS: A=concepto, B=monto, C=moneda(UYU/USD/vacío)
+  if(bR.length) bpsData = bR.map(function(r){return {concepto:r[0],monto_uyu:toUYU(num(r[1]),r[2])};}).filter(function(b){return b.concepto;});
+
+  // Stock: A=item, B=cant, C=valor, D=moneda(UYU/USD/vacío), E=ubicacion
+  if(sR.length) stock = sR.map(function(r){
+    return {item:r[0],cant:int(r[1]),valor_uyu:toUYU(num(r[2]),r[3]),ubicacion:r[4]||''};
+  }).filter(function(x){return x.item;});
+
+  // Servicios: A=servicio, B=estado, C=deuda, D=moneda(UYU/USD/vacío), E=comentario
+  if(svR.length) servicios = svR.map(function(r){
+    return {servicio:r[0],estado:r[1]||'Activo',deuda_uyu:toUYU(num(r[2]),r[3]),comentario:r[4]||''};
+  }).filter(function(x){return x.servicio;});
+
+  // Vendedores: A=nombre, B=liquidacion, C=moneda(UYU/USD/vacío), D=fecha, E=estado, F=comentario
+  vendedores = vR.length ? vR.map(function(r){
+    return {nombre:r[0],liquidacion_uyu:toUYU(num(r[1]),r[2]),fecha:r[3]||'',estado:r[4]||'Liquidado',comentario:r[5]||''};
+  }) : [];
+
+  // VendedoresProductos: A=vendedor, B=producto, C=cantidad, D=valor, E=moneda(UYU/USD/vacío), F=descripcion
+  vendProductos = vpR.length ? vpR.map(function(r){
+    return {vendedor:r[0],producto:r[1],cantidad:int(r[2]),valor_uyu:toUYU(num(r[3]),r[4]),descripcion:r[5]||''};
+  }).filter(function(p){return p.vendedor;}) : [];
 
   var now = new Date().toLocaleString('es-UY',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'});
   if (errors.length === keys.length) {
