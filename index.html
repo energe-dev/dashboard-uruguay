@@ -247,6 +247,9 @@ async function syncAll() {
   // toUYU: si la moneda es USD, multiplica por FX; si no, lo toma como UYU
   function toUYU(v, moneda) { return (moneda||'').toUpperCase()==='USD' ? v*FX : v; }
 
+  // DEBUG: ver qué columnas llegan del sheet
+  console.log('pR raw (primeras 3 filas):', JSON.stringify(pR.slice(0,3)));
+
   // Proveedores: A=nombre, B=monto, C=moneda(UYU/USD/vacío), D=estado, E=comentario
   if(pR.length) proveedores = pR.map(function(r){
     return {nombre:r[0],monto_uyu:toUYU(num(r[1]),r[2]),estado:r[3]||'Abierto',comentario:r[4]||''};
